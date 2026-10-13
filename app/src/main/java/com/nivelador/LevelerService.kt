@@ -3,6 +3,7 @@ package com.nivelador
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -37,6 +38,7 @@ class LevelerService : Service() {
         return START_STICKY
     }
 
+    // Plan A: compresor + limitador (baja lo fuerte, sube lo bajo)
     private fun createCompressor(): DynamicsProcessing {
         val config = DynamicsProcessing.Config.Builder(
             DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
@@ -44,7 +46,8 @@ class LevelerService : Service() {
         ).build()
         val dp = DynamicsProcessing(0, 0, config)
         val band = DynamicsProcessing.MbcBand(
-            true, 20000f, 20f, 300f, 4f, -35f, 6f, -90f, 1f, 0f, 12f
+            true, 20000f, 20f, 300f, 4f, -35f, 6f, -90f, 1f, 0f,
+            12f   // ganancia de salida en dB: sube/baja para mas/menos volumen
         )
         dp.setMbcBandAllChannelsTo(0, band)
         val limiter = DynamicsProcessing.Limiter(true, true, 0, 1f, 60f, 10f, -2f, 0f)
@@ -53,10 +56,10 @@ class LevelerService : Service() {
         return dp
     }
 
-    // Plan B: sube la ganancia (en milibeles: 1000 = +10 dB) con limitador interno.
+    // Plan B: sube la ganancia con limitador interno (1000 = +10 dB)
     private fun createLoudnessEnhancer(): LoudnessEnhancer {
         val le = LoudnessEnhancer(0)
-        le.setTargetGain(1000)
+        le.setTargetGain(1000)   // prueba 1500 o 2000 si los bajos siguen bajos
         le.enabled = true
         return le
     }
@@ -66,10 +69,14 @@ class LevelerService : Service() {
         nm.createNotificationChannel(
             NotificationChannel("nivelador", "Nivelador", NotificationManager.IMPORTANCE_LOW)
         )
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
+        )
         val n = Notification.Builder(this, "nivelador")
-            .setContentTitle("Nivelador activo")
-            .setContentText("Nivelando el volumen")
+            .setContentTitle("NIVELADOR ACTIVADO")
+            .setContentText("Los volúmenes se están igualando. Toca para abrir o apagar.")
             .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
+            .setContentIntent(open)
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
