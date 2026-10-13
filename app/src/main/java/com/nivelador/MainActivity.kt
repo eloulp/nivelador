@@ -45,6 +45,11 @@ class MainActivity : Activity() {
         ) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
+
+        // Al abrir la app se activa sola (no al girar la pantalla)
+        if (savedInstanceState == null && !LevelerService.running) {
+            startForegroundService(Intent(this, LevelerService::class.java))
+        }
     }
 
     private fun toggle() {
