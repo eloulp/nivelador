@@ -6,20 +6,26 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.audiofx.AudioEffect
 import android.media.audiofx.DynamicsProcessing
+import android.media.audiofx.LoudnessEnhancer
 import android.os.Build
 import android.os.IBinder
 
 class LevelerService : Service() {
 
-    private var effect: DynamicsProcessing? = null
+    private var effect: AudioEffect? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startAsForeground()
         try {
-            effect = createCompressor()
+            effect = try {
+                createCompressor()
+            } catch (e: Exception) {
+                createLoudnessEnhancer()   // plan B para Xiaomi/MIUI
+            }
             running = true
             lastError = null
         } catch (e: Exception) {
@@ -31,51 +37,28 @@ class LevelerService : Service() {
         return START_STICKY
     }
 
-    /**
-     * Compresor sobre la mezcla global de audio (sesion 0):
-     * - Baja los sonidos fuertes (ratio 4:1 sobre -35 dB)
-     * - Sube todo con ganancia de salida (+12 dB), asi los bajos se escuchan mas
-     * - Limitador final para que nunca explote
-     */
     private fun createCompressor(): DynamicsProcessing {
         val config = DynamicsProcessing.Config.Builder(
             DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
-            2,          // canales (estereo)
-            false, 0,   // pre-EQ
-            true, 1,    // MBC (compresor) con 1 banda
-            false, 0,   // post-EQ
-            true        // limitador
+            2, false, 0, true, 1, false, 0, true
         ).build()
-
         val dp = DynamicsProcessing(0, 0, config)
-
         val band = DynamicsProcessing.MbcBand(
-            true,       // activo
-            20000f,     // frecuencia de corte (toda la banda)
-            20f,        // ataque (ms)
-            300f,       // liberacion (ms)
-            4f,         // ratio
-            -35f,       // umbral (dB)
-            6f,         // knee (dB)
-            -90f,       // noise gate (dB)
-            1f,         // expander ratio
-            0f,         // pre gain
-            12f         // post gain (dB)  <- subir/bajar para mas/menos volumen
+            true, 20000f, 20f, 300f, 4f, -35f, 6f, -90f, 1f, 0f, 12f
         )
         dp.setMbcBandAllChannelsTo(0, band)
-
-        val limiter = DynamicsProcessing.Limiter(
-            true, true, 0,
-            1f,         // ataque (ms)
-            60f,        // liberacion (ms)
-            10f,        // ratio
-            -2f,        // umbral (dB)
-            0f          // post gain
-        )
+        val limiter = DynamicsProcessing.Limiter(true, true, 0, 1f, 60f, 10f, -2f, 0f)
         dp.setLimiterAllChannelsTo(limiter)
-
         dp.enabled = true
         return dp
+    }
+
+    // Plan B: sube la ganancia (en milibeles: 1000 = +10 dB) con limitador interno.
+    private fun createLoudnessEnhancer(): LoudnessEnhancer {
+        val le = LoudnessEnhancer(0)
+        le.setTargetGain(1000)
+        le.enabled = true
+        return le
     }
 
     private fun startAsForeground() {
